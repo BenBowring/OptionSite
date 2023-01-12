@@ -28,7 +28,7 @@ def get_mid_spread(df):
     t_df.columns = ['spread', 'mid']
     
     return t_df
-    
+
 def option_retrieve(tick, name, exp, px, rets):
     
     try:
