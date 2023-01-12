@@ -7,6 +7,7 @@ from scipy.stats import norm
 
 R = 0.05
 
+
 def option_value(s, k, t, sigma, option_type):
     d1 = (np.log(s / k) + (R + 0.5 * sigma ** 2) * t) / (sigma * np.sqrt(t))
     d2 = d1 - sigma * np.sqrt(t)
@@ -40,18 +41,17 @@ def find_vol(target_value, s, k, t, option_type):
             
     for i in range(0, MAX_ITERATIONS):
         
-        price = option_value(s, t, k, sigma, option_type)
-        vega = option_vega(s, t, k, sigma)
+        price = option_value(s, k, t, sigma, option_type)
+        vega = option_vega(s, k, t, sigma)
 
         diff = target_value - price  # our root
         if (abs(diff) < PRECISION):
             return sigma
         
-        sigma = sigma + diff/vega # f(x) / f'(x)
-
-        if abs(sigma) > 1:
-            
+        if vega < 1:
             sigma = np.nan
             return sigma
+
+        sigma = sigma + diff/vega # f(x) / f'(x)ß
     
     return sigma

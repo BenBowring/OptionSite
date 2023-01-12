@@ -4,6 +4,7 @@ import itertools
 import datetime as dt
 from utils.calculations_simply import *
 
+
 def exp_retrieve(name, thread_loop, tickers):
 
     try:
