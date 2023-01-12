@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import itertools
 import datetime as dt
-from utils.calculations import *
+from utils.calculations_simply import *
 
 def exp_retrieve(name, thread_loop, tickers):
 
@@ -29,32 +29,6 @@ def get_mid_spread(df):
     
     return t_df
 
-def option_retrieve(tick, name, exp, px, rets):
-    
-    try:
-    
-        t_book = tick.option_chain(exp)
-        t_calls = t_book.calls
-        t_puts = t_book.puts
-        
-        t_calls['callput'] = 'call'
-        t_puts['callput'] = 'put'
-        
-        t_chain = pd.concat([t_calls, t_puts])
-        
-        t_chain['expiry'] = exp
-        t_chain['ticker'] = name
-        t_chain['stock_px'] = px['Adj Close'][name].iloc[-1]
-        t_chain['stock_ret'] = rets['Adj Close'][name].iloc[-1]
-        
-        t_chain.reset_index(drop=True, inplace=True)
-        
-    except:
-        
-        t_chain = pd.DataFrame()
-    
-    return t_chain
-
 def get_delta_values(df):
     
     df_delta = df.copy()
@@ -66,8 +40,8 @@ def get_delta_values(df):
     
     df_delta[['spread', 'mid']] = get_mid_spread(df_delta)
 
-    df_delta['vol_calc'] = df_delta.apply(lambda x: find_vol(x.mid, x.stock_px, x.strike, x.t_exp, 0.01, x.callput), axis= 1)
-    df_delta['delta_yahoo'] = df_delta.apply(lambda x: bs_delta(x.stock_px, x.t_exp/252, x.strike, 0, 0, x.impliedVolatility, x.callput), axis = 1)
-    df_delta['delta_calc'] = df_delta.apply(lambda x: bs_delta(x.stock_px, x.t_exp/252, x.strike, 0, 0, x.vol_calc, x.callput), axis = 1)
+    df_delta['vol_calc'] = df_delta.apply(lambda x: find_vol(x.lastPrice, x.stock_px, x.strike, x.t_exp/365, x.callput), axis= 1)
+    df_delta['delta_yahoo'] = df_delta.apply(lambda x: option_delta(x.stock_px, x.strike, x.t_exp/365, x.impliedVolatility, x.callput), axis = 1)
+    df_delta['delta_calc'] = df_delta.apply(lambda x: option_delta(x.stock_px, x.strike, x.t_exp/365, x.vol_calc, x.callput), axis = 1)
     
     return df_delta

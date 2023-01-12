@@ -9,9 +9,45 @@ gDaysInYear = 365.0  # .242
 gSmall = 1e-12
 gNotebookMode = False
 
+R = 0.05
+Q = 0
 INVROOT2PI = 0.3989422804014327
 
-def bs_value(s, t, k, r, q, v, option_type_value):
+def N(x):
+    """ Fast Normal CDF function based on Hull OFAODS  4th Edition Page 252.
+    This function is accurate to 6 decimal places. """
+
+    a1 = 0.319381530
+    a2 = -0.356563782
+    a3 = 1.781477937
+    a4 = -1.821255978
+    a5 = 1.330274429
+    g = 0.2316419
+
+    k = 1.0 / (1.0 + g * np.abs(x))
+    k2 = k * k
+    k3 = k2 * k
+    k4 = k3 * k
+    k5 = k4 * k
+
+    if x >= 0.0:
+        c = (a1 * k + a2 * k2 + a3 * k3 + a4 * k4 + a5 * k5)
+        phi = 1.0 - c * np.exp(-x*x/2.0) * INVROOT2PI
+    else:
+        phi = 1.0 - N(-x)
+
+    return phi
+
+
+def nprime(x: float):
+    """Calculate the first derivative of the Cumulative Normal CDF which is
+    simply the PDF of the Normal Distribution """
+
+    InvRoot2Pi = 0.3989422804014327
+    return np.exp(-x * x / 2.0) * InvRoot2Pi
+
+
+def bs_value(s, t, k, v, option_type_value):
     """ Price a derivative using Black-Scholes model. """
 
     if option_type_value == 'call':
@@ -26,8 +62,8 @@ def bs_value(s, t, k, r, q, v, option_type_value):
     v = np.maximum(v, gSmall)
 
     vsqrtT = v * np.sqrt(t)
-    ss = s * np.exp(-q*t)
-    kk = k * np.exp(-r*t)
+    ss = s * np.exp(-Q*t)
+    kk = k * np.exp(-R*t)
     d1 = np.log(ss/kk) / vsqrtT + vsqrtT / 2.0
     d2 = d1 - vsqrtT
 
@@ -35,11 +71,7 @@ def bs_value(s, t, k, r, q, v, option_type_value):
     value = phi * ss * N(phi * d1) - phi * kk * N(phi * d2)
     return value
 
-def n_vect(x):
-    return N(x)
-
-def bs_delta(s, t, k, r, q, v, p_c):
-    """ Price a derivative using Black-Scholes model. """
+def bs_delta(s, t, k, v, p_c):
 
     if p_c == 'call':
         phi = +1.0
@@ -51,50 +83,49 @@ def bs_delta(s, t, k, r, q, v, p_c):
     v = np.maximum(v, gSmall)
 
     vsqrtT = v * np.sqrt(t)
-    ss = s * np.exp(-q*t)
-    kk = k * np.exp(-r*t)
+    ss = s * np.exp(-Q*t)
+    kk = k * np.exp(-R*t)
     d1 = np.log(ss/kk) / vsqrtT + vsqrtT / 2.0
-    delta = phi * np.exp(-q*t) * n_vect(phi * d1)
+    delta = phi * np.exp(-Q*t) * N(phi * d1)
     return delta
 
+def bs_vega(s, t, k, v):
+    """ Price a derivative using Black-Scholes model. """
 
-# Functions adjusted and modified to include put options and to operate with
-# inconsistent yahoo data
+    k = np.maximum(k, gSmall)
+    t = np.maximum(t, gSmall)
+    v = np.maximum(v, gSmall)
 
-N = norm.cdf
+    sqrtT = np.sqrt(t)
+    vsqrtT = v * sqrtT
+    ss = s * np.exp(-Q*t)
+    kk = k * np.exp(-R*t)
+    d1 = np.log(ss/kk) / vsqrtT + vsqrtT / 2.0
+    vega = ss * sqrtT * nprime(d1)
+    return vega
 
-def bs_call(S, K, T, r, sigma):
-    d1 = (np.log(S/K) + (r + 0.5*sigma**2)*T) / (sigma*np.sqrt(T))
-    d2 = d1 - sigma * np.sqrt(T)
-    return S * norm.cdf(d1) - np.exp(-r * T) * K * norm.cdf(d2)
-
-def bs_put(S, K, T, r, sigma):
-    d1 = (np.log(S/K) + (r + sigma**2/2)*T) / (sigma*np.sqrt(T))
-    d2 = d1 - sigma* np.sqrt(T)
-    return K*np.exp(-r*T)*norm.cdf(-d2) - S*norm.cdf(-d1)
-
-def bs_vega(S, K, T, r, sigma):
-    d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
-    return S * norm.pdf(d1) * np.sqrt(T)
-
-def find_vol(target_value, S, K, T, r, callput,*args):
+def find_vol(contract, target_value, S, T, K, callput):
     MAX_ITERATIONS = 100
-    PRECISION = 1.0e-5
+    PRECISION = 1.0e-4
+
+    print(contract)
     sigma = 0.5
+            
     for i in range(0, MAX_ITERATIONS):
         
-        if callput == 'call':
-            price = bs_call(S, K, T, r, sigma)
-        else:
-            price = bs_put(S, K, T, r, sigma)
-        vega = np.max([bs_vega(S, K, T, r, sigma), 1])
+        price = bs_value(S, T/365, K, sigma, callput)
+        vega = bs_vega(S, T/365, K, sigma)
+
         diff = target_value - price  # our root
         if (abs(diff) < PRECISION):
             return sigma
-        sigma = sigma + diff/vega # f(x) / f'(x)
+        elif vega < 0.1:
+            return sigma
         
-    #If mid price is messing with pricing, we get a vol that blows up to inf, just iterate 100 times and if not within reasonable range we drop
-    
+
+                
+        sigma = sigma + diff/vega # f(x) / f'(x)
+
     if abs(sigma) > 1:
         
         sigma = np.nan
