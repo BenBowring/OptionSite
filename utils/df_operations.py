@@ -5,6 +5,7 @@ import datetime as dt
 from utils.calculations_simply import *
 
 
+
 def exp_retrieve(name, thread_loop, tickers):
 
     try:
@@ -34,10 +35,8 @@ def get_delta_values(df):
     
     df_delta = df.copy()
     
-    today_array = [dt.date.today().strftime('%Y-%m-%d')] * len(df_delta.index)
     df_delta['k_norm'] = df_delta['strike'] / df_delta['stock_px']
     df_delta['1d_delta'] = df_delta['change'] / 100 / df_delta['stock_ret']
-    df_delta['t_exp'] = np.busday_count(today_array, [x for x in df_delta['expiry']])
     
     df_delta[['spread', 'mid']] = get_mid_spread(df_delta)
 
