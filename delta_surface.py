@@ -143,3 +143,7 @@ class delta_suface():
             except:
 
                 pass
+            
+            self.curve_df.clip(lower = 0, upper = 1, inplace = True)
+            
+            
