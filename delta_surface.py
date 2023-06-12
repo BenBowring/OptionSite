@@ -5,8 +5,9 @@ import datetime as dt
 import yfinance as yf
 import requests
 
-from utils.delta_funcs import try_delta, try_vol, get_spot_strike, busday_count
+from utils.delta_funcs import try_delta, try_vol, get_spot_strike, busday_count, poly_thread, ms_convert
 from scipy import interpolate
+from concurrent.futures import ThreadPoolExecutor
 
 AUTH_TOKEN = "Bearer VWfadof1oP5Ot4m7XZ0k1jA2CYBmdtgr"
 
@@ -19,13 +20,17 @@ class delta_suface():
 
         self.ticker_query = " ".join(self.tickers)
 
-        self.delta_t = pd.tseries.offsets.BusinessDay(n = 252)
+        self.delta_t_yahoo = pd.tseries.offsets.BusinessDay(n = 252)
+        self.delta_t_poly = pd.tseries.offsets.BusinessDay(n = 21)
+        
         self.end_date = dt.date.today()
-        self.start_date = self.end_date - self.delta_t
+        
+        self.start_date_yahoo = self.end_date - self.delta_t_yahoo
+        self.start_date_poly = self.end_date - self.delta_t_poly
 
     def get_px(self):
 
-        self.px = yf.download(self.ticker_query, start=self.start_date)
+        self.px = yf.download(self.ticker_query, start=self.start_date_yahoo)
         self.px.index = self.px.index.date
 
         self.spot = self.px['Adj Close'].ffill()
@@ -64,7 +69,7 @@ class delta_suface():
             
             while isinstance(next_query, str):
                 
-                next_query = self.poly_query(next_query, {'limit': 250})
+                next_query = self.poly_query(next_query, {'limit': 100})
                 
                 init_chain.extend(next_query.get('results'))
                 
@@ -85,6 +90,7 @@ class delta_suface():
             strikes = [contract['details'].get('strike_price', np.nan) for contract in self.query_dict[tick]]
             call_puts = [contract['details'].get('contract_type', np.nan) for contract in self.query_dict[tick]]
             opt_style = [contract['details'].get('exercise_style', np.nan) for contract in self.query_dict[tick]]
+            opt_ticker = [contract['details'].get('ticker', np.nan) for contract in self.query_dict[tick]]
             
             spots = [contract['day'].get('close', np.nan) for contract in self.query_dict[tick]]
             volumes = [contract['day'].get('volume', np.nan) for contract in self.query_dict[tick]]
@@ -95,8 +101,8 @@ class delta_suface():
 
             t_df = pd.DataFrame({'expiry': expiries, 'strike': strikes,
             'callput': call_puts, 'style': opt_style, 'spot': spots,
-            'volume': volumes, 'update':update, 'open_interest':open_interest,
-            'px': px_ticker})
+            'volume': volumes, 'update': update, 'open_interest':open_interest,
+            'px': px_ticker, 'opt_ticker': opt_ticker})
 
             t_df['ticker'] = tick
             t_df['k_norm'] = strikes / ticker_spot
@@ -123,7 +129,7 @@ class delta_suface():
         
     def delta_curve(self, sf = 0.01):
         
-        rebase_index = np.arange(0.5,1.501,0.01)
+        rebase_index = np.arange(0.75,1.251,0.01)
         self.curve_df = pd.DataFrame(columns = self.tickers, index = rebase_index)
 
         for tick in self.tickers:
@@ -146,4 +152,55 @@ class delta_suface():
             
             self.curve_df.clip(lower = 0, upper = 1, inplace = True)
             
+    def hist_poly_payload(self, ticker):
+        
+        chain_slug_hist = f'https://api.polygon.io/v2/aggs/ticker/'
+        
+        from_date = self.start_date_poly.strftime('%Y-%m-%d')
+        to_date = self.end_date.strftime('%Y-%m-%d')
+
+        query_url = chain_slug_hist + ticker + f'/range/1/day/{from_date}/{to_date}/'
+        
+        return query_url
+    
+    def hist_poly_query(self, query_url):
+        
+        r = requests.get(query_url, headers={"Authorization": AUTH_TOKEN})
+        
+        dict_results = dict(r.json())
+        
+        return dict_results
+    
+    
+    ## this function and process is so similar we can surely make a decorator?
+    
+    def hist_poly_chain(self, ticker):
+        
+        init_query = self.hist_poly_query(self.hist_poly_payload(ticker))
+        
+        init_chain = init_query.get('results')
+        next_query = init_query.get('next_url')
+        
+        while isinstance(next_query, str):
             
+            next_query = self.poly_query(next_query, {'limit': 100})
+            
+            init_chain.extend(next_query.get('results'))
+            
+            next_query = next_query.get('next_url')
+            
+        return init_chain
+        
+    ## Need to pass other details such as expiry, etc so we can label in threading function
+        
+    def hist_poly_thread(self, thread_count = 10):
+        
+        thread_count = thread_count
+
+        with ThreadPoolExecutor(thread_count) as executor:
+            futures = [executor.submit(poly_thread, self, tick) for tick in self.delta_df['opt_ticker']]
+        
+        full_chain = pd.concat([future.result() for future in futures]).reset_index(drop = True)
+        full_chain['date'] = full_chain['t'].apply(lambda x: ms_convert(x))
+        
+        return full_chain
