@@ -40,8 +40,8 @@ class delta_suface():
         query_url = self.chain_slug + ticker + '/'
         ticker_spot = self.spot[ticker].dropna().iloc[-1]
 
-        low_strike = 0.75 * ticker_spot
-        high_strike = 1.25 * ticker_spot
+        low_strike = 0.5 * ticker_spot
+        high_strike = 1.5 * ticker_spot
 
         payload = {'expiration_date': "2023-12-15", 'contract_type': 'call', 'limit': 100}
 
@@ -127,9 +127,9 @@ class delta_suface():
         self.delta_df['pv_vol'] = self.delta_df.apply(lambda x: try_vol(x), axis = 1).ffill()
         self.delta_df['pv_delta'] = self.delta_df.apply(lambda x: try_delta(x), axis = 1)
         
-    def delta_curve(self, sf = 0.01):
+    def delta_curve(self, sf = 0.2):
         
-        rebase_index = np.arange(0.75,1.251,0.01)
+        rebase_index = np.arange(0.5,1.51,0.01)
         self.curve_df = pd.DataFrame(columns = self.tickers, index = rebase_index)
 
         for tick in self.tickers:
@@ -151,6 +151,7 @@ class delta_suface():
                 pass
             
             self.curve_df.clip(lower = 0, upper = 1, inplace = True)
+            self.curve_df = self.curve_df.cummin()[::-1].cummax()[::-1]
             
     def hist_poly_payload(self, ticker):
         
