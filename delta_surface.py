@@ -43,7 +43,7 @@ class delta_suface():
         low_strike = 0.5 * ticker_spot
         high_strike = 1.5 * ticker_spot
 
-        payload = {'expiration_date': "2023-12-15", 'contract_type': 'call', 'limit': 100}
+        payload = {'expiration_date': "2023-06-16", 'contract_type': 'call', 'limit': 100}
 
         return [query_url, payload]
 
